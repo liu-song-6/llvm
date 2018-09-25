@@ -914,6 +914,7 @@ void DwarfDebug::endModule() {
   // Emit the pubnames and pubtypes sections if requested.
   emitDebugPubSections();
 
+  emitBtfSection();
   // clean up.
   // FIXME: AbstractVariables.clear();
 }
@@ -2389,6 +2390,12 @@ MCDwarfDwoLineTable *DwarfDebug::getDwoLineTable(const DwarfCompileUnit &CU) {
       DIUnit->getDirectory(), DIUnit->getFilename(),
       CU.getMD5AsBytes(DIUnit->getFile()), DIUnit->getSource());
   return &SplitTypeUnitFileTable;
+}
+
+void DwarfDebug::emitBtfSection() {
+  DwarfFile &Holder = useSplitDwarf() ? SkeletonHolder : InfoHolder;
+
+  Holder.emitBtfSection(Asm->getObjFileLowering().getBtfSection());
 }
 
 uint64_t DwarfDebug::makeTypeSignature(StringRef Identifier) {

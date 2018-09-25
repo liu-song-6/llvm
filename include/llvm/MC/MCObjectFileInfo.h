@@ -207,6 +207,9 @@ protected:
   MCSection *SXDataSection;
   MCSection *GFIDsSection;
 
+  // BTF sections with debug info for BTF backend.
+  MCSection *BtfSection;
+
 public:
   void InitMCObjectFileInfo(const Triple &TT, bool PIC, MCContext &ctx,
                             bool LargeCodeModel = false);
@@ -371,6 +374,9 @@ public:
   MCSection *getEHFrameSection() {
     return EHFrameSection;
   }
+
+  // BTF sections with debug info for BTF backend.
+  MCSection *getBtfSection() const { return BtfSection; }
 
   enum Environment { IsMachO, IsELF, IsCOFF, IsWasm };
   Environment getObjectFileType() const { return Env; }

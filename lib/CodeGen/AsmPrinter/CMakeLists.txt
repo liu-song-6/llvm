@@ -23,6 +23,7 @@ add_llvm_library(LLVMAsmPrinter
   WinCFGuard.cpp
   WinException.cpp
   CodeViewDebug.cpp
+  Dwarf2Btf.cpp
 
   DEPENDS
   intrinsics_gen

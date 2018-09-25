@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Dwarf2Btf.h"
 #include "DwarfFile.h"
 #include "DwarfCompileUnit.h"
 #include "DwarfDebug.h"
@@ -86,6 +87,19 @@ void DwarfFile::emitAbbrevs(MCSection *Section) { Abbrevs.Emit(Asm, Section); }
 void DwarfFile::emitStrings(MCSection *StrSection, MCSection *OffsetSection,
                             bool UseRelativeOffsets) {
   StrPool.emit(*Asm, StrSection, OffsetSection, UseRelativeOffsets);
+}
+
+void DwarfFile::emitBtfSection(MCSection *BtfSection) {
+  if (!BtfSection)
+    return;
+  BtfContext BtfContext;
+  for (auto &TheU : CUs) {
+    // TheU->getUnitDie().print(outs());
+    BtfContext.addDwarfCU(TheU.get());
+  }
+  BtfContext.finish();
+  // BtfContext.showAll();
+  BtfContext.emitBtfSection(Asm, BtfSection);
 }
 
 bool DwarfFile::addScopeVariable(LexicalScope *LS, DbgVariable *Var) {

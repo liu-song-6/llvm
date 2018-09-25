@@ -468,6 +468,8 @@ void MCObjectFileInfo::initELFMCObjectFileInfo(const Triple &T, bool Large) {
       Ctx->getELFSection(".eh_frame", EHSectionType, EHSectionFlags);
 
   StackSizesSection = Ctx->getELFSection(".stack_sizes", ELF::SHT_PROGBITS, 0);
+
+  BtfSection = Ctx->getELFSection(".BTF", ELF::SHT_PROGBITS, 0);
 }
 
 void MCObjectFileInfo::initCOFFMCObjectFileInfo(const Triple &T) {
