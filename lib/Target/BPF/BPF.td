@@ -32,6 +32,9 @@ def ALU32 : SubtargetFeature<"alu32", "HasAlu32", "true",
 def DwarfRIS: SubtargetFeature<"dwarfris", "UseDwarfRIS", "true",
                                "Disable MCAsmInfo DwarfUsesRelocationsAcrossSections">;
 
+def EmitBTF: SubtargetFeature<"emitbtf", "EmitBTF", "true",
+                              "Emit BTF debug info">;
+
 def BPFInstPrinter : AsmWriter {
   string AsmWriterClassName  = "InstPrinter";
   bit isMCAsmWriter = 1;

@@ -54,6 +54,9 @@ protected:
   // whether we should enable MCAsmInfo DwarfUsesRelocationsAcrossSections
   bool UseDwarfRIS;
 
+  // whether to emit the BTF section
+  bool EmitBTF;
+
 public:
   // This constructor initializes the data members to match that
   // of the specified triple.
@@ -68,6 +71,7 @@ public:
   bool getHasJmpExt() const { return HasJmpExt; }
   bool getHasAlu32() const { return HasAlu32; }
   bool getUseDwarfRIS() const { return UseDwarfRIS; }
+  bool getEmitBTF() const { return EmitBTF; }
 
   const BPFInstrInfo *getInstrInfo() const override { return &InstrInfo; }
   const BPFFrameLowering *getFrameLowering() const override {
