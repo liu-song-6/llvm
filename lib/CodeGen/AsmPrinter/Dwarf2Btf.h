@@ -184,12 +184,12 @@ public:
   size_t getId() { return Id; }
   void setNameOff(__u32 NameOff) { BtfType.name_off = NameOff; }
 
-  void emitData(AsmPrinter *Asm) {
+  virtual void emitData(AsmPrinter *Asm) {
     Asm->emitInt32(BtfType.name_off);
     Asm->emitInt32(BtfType.info);
     Asm->emitInt32(BtfType.size);
   }
-  size_t getSize() { return sizeof(struct btf_type); }
+  virtual size_t getSize() { return sizeof(struct btf_type); }
 
   __u32 getTypeIndex() { return BtfType.type; }
   __u32 getNameOff() { return BtfType.name_off; }

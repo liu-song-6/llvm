@@ -45,14 +45,17 @@ unsigned char BtfTypeEntry::getDieKind(const DIE & Die) {
     case dwarf::DW_TAG_array_type:
       return BTF_KIND_UNKN;
     case dwarf::DW_TAG_subprogram:
-      return BTF_KIND_FUNC;
+      return BTF_KIND_UNKN; // TODO: add BTF_KIND_FUNC;
     case dwarf::DW_TAG_subroutine_type:
-      return BTF_KIND_FUNC_PROTO;
+      return BTF_KIND_UNKN; // TODO: add BTF_KIND_FUNC_PROTO;
     case dwarf::DW_TAG_compile_unit:
-      return BTF_KIND_UNKN; // TODO: add function support
+      return BTF_KIND_UNKN;
     case dwarf::DW_TAG_variable:
     {
       auto TypeV = Die.findAttribute(dwarf::DW_AT_type);
+      if (TypeV.getType() == DIEValue::isNone)
+        return BTF_KIND_UNKN;  // TODO: fix variable with no types?
+
       auto &TypeDie = TypeV.getDIEEntry().getEntry();
       if (TypeDie.getTag() == dwarf::DW_TAG_array_type)
         return BTF_KIND_ARRAY;
@@ -60,9 +63,13 @@ unsigned char BtfTypeEntry::getDieKind(const DIE & Die) {
         return BTF_KIND_UNKN;
     }
     case dwarf::DW_TAG_formal_parameter:
+    case dwarf::DW_TAG_typedef:  // TODO: add typedef
+    case dwarf::DW_TAG_inlined_subroutine:
+    case dwarf::DW_TAG_lexical_block:
       break;
     default:
-      errs() << "BTF: Unsupported TAG " << dwarf::TagString(Die.getTag())
+      errs() << "BTF: Unsupported TAG "
+             << dwarf::TagString(Die.getTag())
              << "\n";
       break;
   }
@@ -109,6 +116,15 @@ bool BtfTypeEntry::shouldSkipDie(const DIE &Die) {
     case dwarf::DW_TAG_volatile_type:
     {
       auto TypeV = Die.findAttribute(dwarf::DW_AT_type);
+      if (TypeV.getType() == DIEValue::isNone) {
+        if (Tag == dwarf::DW_TAG_pointer_type)
+          return true;  // TODO: handle void pointer?
+
+        errs() << "Tag " << dwarf::TagString(Tag) << " has no type\n";
+        Die.print(errs());
+        return true;
+      }
+
       auto &TypeDie = TypeV.getDIEEntry().getEntry();
       return BtfTypeEntry::shouldSkipDie(TypeDie);
     }
@@ -128,8 +144,8 @@ unsigned char BtfTypeEntry::getBaseTypeEncoding(const DIE &Die) {
       return BTF_INT_BOOL;
     case dwarf::DW_ATE_signed:
       return BTF_INT_SIGNED;
-    case dwarf::DW_ATE_signed_char:
-      return (BTF_INT_SIGNED | BTF_INT_CHAR);
+    case dwarf::DW_ATE_signed_char:  // TODO ?: do we need signed char?
+      return BTF_INT_CHAR;
     case dwarf::DW_ATE_unsigned:
       return 0;
     case dwarf::DW_ATE_unsigned_char:
@@ -207,18 +223,21 @@ BtfTypeEntryInt::BtfTypeEntryInt(const DIE &Die) : BtfTypeEntry(Die) {
   if (V.getType() == DIEValue::isInteger)
     IntVal |= (V.getDIEInteger().getValue() & 0xff) << 16;
 
-  // handle BTF_INT_BITS in IntVal
-  V = Die.findAttribute(dwarf::DW_AT_bit_size);
-  if (V.getType() == DIEValue::isInteger)
-    IntVal |= V.getDIEInteger().getValue() & 0xff;
-
   // get btf_type.size
   V = Die.findAttribute(dwarf::DW_AT_byte_size);
   __u32 Size = V.getDIEInteger().getValue() & 0xffffffff;
 
+  // handle BTF_INT_BITS in IntVal
+  V = Die.findAttribute(dwarf::DW_AT_bit_size);
+  if (V.getType() == DIEValue::isInteger) {
+    IntVal |= V.getDIEInteger().getValue() & 0xff;
+    IntVal |= (V.getDIEInteger().getValue() & 0xff);
+  } else
+    IntVal |= (Size << 3) & 0xff;
+
   BtfType.info = BTF_KIND_INT << 24;
   BtfType.size = Size;
-  IntVal = IntVal;
+  this->IntVal = IntVal;
 }
 
 void BtfTypeEntryInt::completeData(class BtfContext &BtfContext) {
@@ -252,9 +271,12 @@ BtfTypeEntryEnum::BtfTypeEntryEnum(const DIE &Die) : BtfTypeEntry(Die) {
 void BtfTypeEntryEnum::completeData(class BtfContext &BtfContext) {
   auto TypeV = Die.findAttribute(dwarf::DW_AT_type);
   auto NameV = Die.findAttribute(dwarf::DW_AT_name);
-  auto Str = NameV.getDIEString().getString();
 
-  BtfType.name_off = BtfContext.addString(Str);
+  if (NameV.getType() != DIEValue::isNone) {
+    auto Str = NameV.getDIEString().getString();
+    BtfType.name_off = BtfContext.addString(Str);
+  } else
+    BtfType.name_off = 0;
 
   for (auto &ChildDie : Die.children()) {
     struct btf_enum BtfEnum;
@@ -338,14 +360,23 @@ BtfTypeEntryStruct::BtfTypeEntryStruct(const DIE &Die) : BtfTypeEntry(Die) {
 
 void BtfTypeEntryStruct::completeData(class BtfContext &BtfContext) {
   auto NameV = Die.findAttribute(dwarf::DW_AT_name);
-  auto Str = NameV.getDIEString().getString();
-  BtfType.name_off = BtfContext.addString(Str);
+
+  if (NameV.getType() != DIEValue::isNone) {
+    auto Str = NameV.getDIEString().getString();
+    BtfType.name_off = BtfContext.addString(Str);
+  } else
+    BtfType.name_off = 0;
   for (auto &ChildDie : Die.children()) {
+    if (ChildDie.getTag() != dwarf::DW_TAG_member)
+      continue;
     struct btf_member BtfMember;
     auto ChildNameV = ChildDie.findAttribute(dwarf::DW_AT_name);
 
-    Str = ChildNameV.getDIEString().getString();
-    BtfMember.name_off = BtfContext.addString(Str);
+    if (ChildNameV.getType() != DIEValue::isNone) {
+      auto Str = ChildNameV.getDIEString().getString();
+      BtfMember.name_off = BtfContext.addString(Str);
+    } else
+      BtfMember.name_off = 0;
 
     auto TypeV = ChildDie.findAttribute(dwarf::DW_AT_type);
     auto &TypeDie = TypeV.getDIEEntry().getEntry();
@@ -385,6 +416,14 @@ BtfTypeEntryFunc::BtfTypeEntryFunc(const DIE &Die) : BtfTypeEntry(Die) {
 
 void BtfTypeEntryFunc::completeData(class BtfContext &BtfContext) {
   auto NameV = Die.findAttribute(dwarf::DW_AT_name);
+  if (NameV.getType() == DIEValue::isNone) {
+    auto TypeV = Die.findAttribute(dwarf::DW_AT_type);
+    if (TypeV.getType() == DIEValue::isNone)
+      return;
+    NameV = TypeV.getDIEEntry().getEntry().findAttribute(dwarf::DW_AT_name);
+    if (NameV.getType() == DIEValue::isNone)
+      return;
+  }
   auto Str = NameV.getDIEString().getString();
   BtfType.name_off = BtfContext.addString(Str);
 
@@ -410,25 +449,27 @@ void BtfTypeEntryFunc::print(raw_ostream &s, BtfContext& BtfContext) {
 __u32 BtfContext::getTypeIndex(DIE &Die) {
   DIE *DiePtr = const_cast<DIE*>(&Die);
 
-  assert((DieToIdMap.find(DiePtr) != DieToIdMap.end()) &&
-         "Die not added to in the BtfContext");
+  if (DieToIdMap.find(DiePtr) == DieToIdMap.end())
+    return 0;
   return DieToIdMap[DiePtr] + 1;
 }
 
 BtfTypeEntry *BtfContext::getReferredTypeEntry(BtfTypeEntry *TypeEntry) {
-  if (TypeEntry->getTypeIndex() == 0) {
-    errs() << "No reference for this BtfTypeEntry\n";
-    return NULL;
-  }
+  if (TypeEntry->getTypeIndex() == 0)
+    return nullptr;
 
   return TypeEntries[TypeEntry->getTypeIndex() - 1].get();
 }
 
 BtfTypeEntry *BtfContext::getMemberTypeEntry(struct btf_member &Member) {
+  if (Member.type == 0)
+    return nullptr;
   return TypeEntries[Member.type - 1].get();
 }
 
 std::string BtfContext::getTypeName(BtfTypeEntry *TypeEntry) {
+  if (!TypeEntry)
+    return "UNKNOWN";
   int Kind = TypeEntry->getKind();
 
   switch (Kind) {
@@ -473,9 +514,11 @@ void BtfContext::addTypeEntry(const DIE &Die) {
   auto Kind = BtfTypeEntry::getDieKind(Die);
   if (Kind != BTF_KIND_UNKN) {
     auto TypeEntry = BtfTypeEntry::dieToBtfTypeEntry(Die);
-    TypeEntry->setId(TypeEntries.size());
-    DieToIdMap[const_cast<DIE*>(&Die)] = TypeEntry->getId();
-    TypeEntries.push_back(std::move(TypeEntry));
+    if (TypeEntry != nullptr) {
+      TypeEntry->setId(TypeEntries.size());
+      DieToIdMap[const_cast<DIE*>(&Die)] = TypeEntry->getId();
+      TypeEntries.push_back(std::move(TypeEntry));
+    }
   }
 }
 
@@ -501,7 +544,7 @@ size_t BtfStringTable::addString(std::string S) {
 }
 
 void BtfContext::completeData() {
-  StringTable.addString("NULL");
+  StringTable.addString("\0");
 
   for (auto &TypeEntry : TypeEntries)
     TypeEntry->completeData(*this);
